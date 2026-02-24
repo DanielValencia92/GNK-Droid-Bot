@@ -1196,6 +1196,13 @@ async def post_standings(ctx):
         await ctx.send("⚠️ No new standings generated. No completed runs or no changes since last report.")
 
 
+@bot.command()
+@commands.is_owner() # Only YOU can trigger a pull/restart
+async def update_bot(ctx):
+    await ctx.send("📡 Pulling latest code from GitHub and restarting...")
+    # This shuts down the bot process
+    await bot.close()
+        
 @bot.command(name="meta")
 @commands.is_owner()
 async def meta_standings(ctx):
