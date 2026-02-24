@@ -1,0 +1,5 @@
+keys.py
+*.log
+__pycache__/
+*.json
+*.png
