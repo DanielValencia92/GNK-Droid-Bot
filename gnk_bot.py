@@ -12,6 +12,7 @@ from helper import generate_standings_image, parse_deck_json, generate_meta_stan
 from logging.handlers import TimedRotatingFileHandler
 import sys
 import keys
+import subprocess
 
 # -- Logging setup
 LOG_FILENAME = 'league_bot.log'
@@ -871,6 +872,26 @@ async def on_message(message):
 @commands.is_owner()
 async def spawn_queue(ctx):
     await ctx.send(embed=discord.Embed(title="GNK Droid", description="Daily run limits reset at 3 AM PT.\nHave fun!🚀⭐"), view=QueueView())
+
+@bot.command(name="version")
+@commands.is_owner()
+async def version(ctx):
+    """Displays the current build version based on git commits."""
+    try:
+        # Get the short hash, the relative time, and the commit message
+        git_info = subprocess.check_output(
+            ["git", "log", "-1", "--format=%h (%cr): %s"],
+            stderr=subprocess.STDOUT
+        ).decode("utf-8").strip()
+
+        embed = discord.Embed(
+            title="🤖 Bot Version Info",
+            description=f"**Current Build:**\n`{git_info}`",
+            color=discord.Color.blue()
+        )
+        await ctx.send(embed=embed)
+    except:
+        await ctx.send(F"❌ Could not retrieve version info: {e}")
 
 @bot.hybrid_command()
 @commands.is_owner()
