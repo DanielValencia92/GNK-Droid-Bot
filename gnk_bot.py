@@ -267,8 +267,8 @@ class ReactivationApprovalView(discord.ui.View):
 
 class ResultView(discord.ui.View):
     def __init__(self, winner_id, loser_id, match_type="queue"):
-        # The 60-second window for the loser to confirm or dispute
-        super().__init__(timeout=60)
+        # The 180-second window for the loser to confirm or dispute
+        super().__init__(timeout=180)
         self.winner_id, self.loser_id = winner_id, loser_id
         self.match_type = match_type
         self.confirmed = False
@@ -766,7 +766,8 @@ async def on_message(message):
                 "`MY_DATA` - Download your full run history.\n"
                 "`REQUEST_REACTIVATION` - Request a finished run be reopened.\n"
                 "`QUEUED` - View the current matchmaking queue status.\n"
-                "`ENTER_QUEUE` - Join the matchmaking queue (if you have an active run and aren't already queued)."
+                "`ENTER_QUEUE` - Join the matchmaking queue (if you have an active run and aren't already queued).\n"
+                "`REPORT_MATCH` - Report a match that you played in person or had scheduled with someone else. Must have a current run. Requires knowing opponent's user ID. Check out the rules channel for information."
             ), 
             inline=False
         )
@@ -1144,8 +1145,8 @@ async def announce_trophy(user_id, run_data):
 
     username = run_data.get("name", "A player")
     deck_link = run_data.get("deck_link", "Unknown Deck")
-    leader = run_data.get("leader_name", "Unknown Leader")
-    base = run_data.get("base_name", "Unknown Base")
+    leader = run_data.get("leader", "Unknown Leader")
+    base = run_data.get("base", "Unknown Base")
 
     embed = discord.Embed(
         title="🏆 Undefeated Run!",
