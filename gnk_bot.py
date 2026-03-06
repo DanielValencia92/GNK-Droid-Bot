@@ -8,7 +8,7 @@ import os
 import uuid
 import csv
 import pytz # New: For timezone handling
-from helper import generate_standings_image, parse_deck_json, generate_meta_standings, generate_user_performance_report, generate_user_mastery_report
+from helper import generate_standings_image, parse_deck_json, generate_meta_standings, generate_user_performance_report, generate_user_mastery_report, generate_run_stats_report
 from logging.handlers import TimedRotatingFileHandler
 import sys
 import keys
@@ -739,6 +739,18 @@ async def on_message(message):
             if os.path.exists(filename):
                 os.remove(filename)
     
+    # --- 6. RUN STATS ---
+    elif content.upper() == "RUN_STATS":
+        output_file = generate_run_stats_report(uid, COMPLETED_FILE)
+        if output_file is None:
+            await message.channel.send("❌ No completed runs found for your account yet. Finish a run to see your stats!")
+        else:
+            try:
+                await message.channel.send(file=discord.File(output_file))
+            finally:
+                if os.path.exists(output_file):
+                    os.remove(output_file)
+
     elif content.upper() == "REQUEST_REACTIVATION":
         pending_reactivations[uid] = datetime.now(timezone.utc).astimezone(LOCAL_TZ)
         await message.channel.send("Please enter the **Run ID** you wish to reactivate.")
@@ -764,6 +776,7 @@ async def on_message(message):
                 "`STOP` - Leave the matchmaking queue.\n"
                 "`FINISH` - Archive your run early.\n"
                 "`MY_DATA` - Download your full run history.\n"
+                "`RUN_STATS` - View your personal stats: total runs, win rate, and a breakdown by leader/base combo.\n"
                 "`REQUEST_REACTIVATION` - Request a finished run be reopened.\n"
                 "`QUEUED` - View the current matchmaking queue status.\n"
                 "`ENTER_QUEUE` - Join the matchmaking queue (if you have an active run and aren't already queued).\n"
