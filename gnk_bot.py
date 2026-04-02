@@ -294,12 +294,13 @@ class ResultView(discord.ui.View):
             try: await winner_user.send(msg)
             except: pass
         
-        # Notify Loser
-        loser_user = bot.get_user(self.loser_id)
-        if loser_user:  
-            msg = "✅ Result confirmed!" if not is_auto else "⏰ Auto-confirmed (You timed out)."
-            try: await loser_user.send(msg)
-            except: pass
+        # Notify Loser (DM only if there's no thread — otherwise they already saw it in the thread)
+        if not self.thread_id:
+            loser_user = bot.get_user(self.loser_id)
+            if loser_user:
+                msg = "✅ Result confirmed!" if not is_auto else "⏰ Auto-confirmed (You timed out)."
+                try: await loser_user.send(msg)
+                except: pass
 
         # Delete the match thread now that the result is confirmed
         if self.thread_id:
