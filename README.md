@@ -11,9 +11,10 @@ Players start a **run** — a set of up to 3 league matches played with a single
 1. Player clicks the queue button in the league channel → bot DMs them
 2. Player pastes their SWUDB JSON export to register their deck
 3. Player types `ENTER_QUEUE` to enter the matchmaking pool
-4. Bot pairs players and notifies both via DM
-5. Winner clicks "I Won" → loser confirms (or auto-confirms after 3 minutes)
-6. After 3 matches the run is automatically archived; a 3-0 run triggers a public trophy announcement
+4. Bot pairs players, creates a **private match thread**, adds both players, and DMs each a link to it
+5. Winner clicks "I Won" in the thread → loser confirms or disputes (or auto-confirms after 3 minutes)
+6. On confirmation the match thread is automatically deleted
+7. After 3 matches the run is automatically archived; a 3-0 run triggers a public trophy announcement
 
 Runs reset at **3 AM Pacific** with a limit of **2 runs per player per day**.
 
@@ -46,13 +47,16 @@ playwright install
 Create a `keys.py` file in the project root with the following values:
 
 ```python
-TOKEN                         = "your-bot-token"
-ADMIN_CHANNEL_ID              = 000000000000000000
+TOKEN                           = "your-bot-token"
+ADMIN_CHANNEL_ID                = 000000000000000000
 REACTIVATION_REQUEST_CHANNEL_ID = 000000000000000000
-SERVER_ID                     = 000000000000000000
-TROPHY_CHANNEL_ID             = 000000000000000000
-LEADERBOARD_CHANNEL_ID        = 000000000000000000
+SERVER_ID                       = 000000000000000000
+TROPHY_CHANNEL_ID               = 000000000000000000
+LEADERBOARD_CHANNEL_ID          = 000000000000000000
+MATCH_THREAD_CHANNEL_ID         = 000000000000000000  # Channel where private match threads are created
 ```
+
+> **`MATCH_THREAD_CHANNEL_ID`** must be a standard text channel in your server. The bot requires **Create Private Threads**, **Manage Threads**, and **Send Messages in Threads** permissions in that channel. Private threads also require the server to be at **Boost Level 2** or above. If the key is omitted or the thread cannot be created, the bot falls back to DM-only match notifications.
 
 ### Card Data Files
 
@@ -65,9 +69,19 @@ These are used to resolve deck IDs from SWUDB JSON exports into human-readable l
 
 ### Running the Bot
 
+For production use, the included `deploy.sh` script automatically restarts the bot after crashes or updates:
+
 ```bash
-python gnk_bot.py
+bash deploy.sh
 ```
+
+The script reads the target Git branch from a local `target_branch` file (not committed). Create this file on the server before first launch:
+
+```bash
+echo "main" > target_branch
+```
+
+The branch can be changed at runtime using the `!update_bot` command — see Admin Commands below.
 
 ---
 
@@ -124,7 +138,7 @@ python gnk_bot.py
 | `!user_report` | Generate a per-player wins/losses/positive runs performance image |
 | `!mastery_report` | Generate a per-player unique positive leaders/win rate image |
 | `!test_trophy <member>` | Test the 3-0 DM and trophy announcement flow |
-| `!update_bot` | Pull the latest code from GitHub and restart the bot |
+| `!update_bot [branch]` | Pull the latest code and restart. Writes `branch` (default: `main`) to the `target_branch` file used by `deploy.sh`. Example: `!update_bot experimental` |
 | `!version` | Show the current git build info |
 | `!sync` | Sync slash commands to the server |
 
@@ -174,7 +188,9 @@ A **3-0 run** (3 wins, 0 losses) automatically triggers:
 ```
 gnk_bot.py          # Main bot logic — commands, events, tasks, views
 helper.py           # Image generation (standings, reports, meta) and deck parsing utilities
+deploy.sh           # Restart loop script; reads target branch from target_branch file
 keys.py             # Secret configuration (not committed)
+target_branch       # Plain text file containing the Git branch to pull on restart (not committed)
 card_data_files/
   all_leaders.json  # Leader card database
   all_bases.json    # Base card database

@@ -53,6 +53,7 @@ SERVER_ID = keys.SERVER_ID
 # ACTUAL TROPHY CHANNEL BELOW
 TROPHY_CHANNEL_ID = keys.TROPHY_CHANNEL_ID
 LEADERBOARD_CHANNEL_ID = keys.LEADERBOARD_CHANNEL_ID
+MATCH_THREAD_CHANNEL_ID = getattr(keys, 'MATCH_THREAD_CHANNEL_ID', None)  # Channel where private match threads are created
 
 MAX_RUNS_PER_DAY = 2
 MATCH_LIMIT = 3
@@ -266,11 +267,12 @@ class ReactivationApprovalView(discord.ui.View):
         self.stop()
 
 class ResultView(discord.ui.View):
-    def __init__(self, winner_id, loser_id, match_type="queue"):
+    def __init__(self, winner_id, loser_id, match_type="queue", thread_id=None):
         # The 180-second window for the loser to confirm or dispute
         super().__init__(timeout=180)
         self.winner_id, self.loser_id = winner_id, loser_id
         self.match_type = match_type
+        self.thread_id = thread_id
         self.confirmed = False
 
     async def process_results(self, is_auto=False):
@@ -292,12 +294,22 @@ class ResultView(discord.ui.View):
             try: await winner_user.send(msg)
             except: pass
         
-        # Notify Loser
-        loser_user = bot.get_user(self.loser_id)
-        if loser_user:  
-            msg = "✅ Result confirmed!" if not is_auto else "⏰ Auto-confirmed (You timed out)."
-            try: await loser_user.send(msg)
-            except: pass
+        # Notify Loser (DM only if there's no thread — otherwise they already saw it in the thread)
+        if not self.thread_id:
+            loser_user = bot.get_user(self.loser_id)
+            if loser_user:
+                msg = "✅ Result confirmed!" if not is_auto else "⏰ Auto-confirmed (You timed out)."
+                try: await loser_user.send(msg)
+                except: pass
+
+        # Delete the match thread now that the result is confirmed
+        if self.thread_id:
+            thread = bot.get_channel(self.thread_id)
+            if thread:
+                try:
+                    await thread.delete()
+                except Exception as e:
+                    logging.warning(f"Could not delete match thread {self.thread_id}: {e}")
 
         # Check for Run Completion (3 matches)
         for uid in [self.winner_id, self.loser_id]:
@@ -352,16 +364,29 @@ class ResultView(discord.ui.View):
             await self.process_results(is_auto=True)
 
 class MatchReportView(discord.ui.View):
-    def __init__(self, p1, p2):
+    def __init__(self, p1, p2, thread_id=None):
         super().__init__(timeout=None)
         self.p1, self.p2 = p1, p2
+        self.thread_id = thread_id
 
     @discord.ui.button(label="I Won", style=discord.ButtonStyle.primary)
     async def win_claim(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id not in (self.p1.id, self.p2.id):
+            await interaction.response.send_message("Only match participants can report a result.", ephemeral=True)
+            return
         winner = interaction.user
         loser = self.p2 if winner.id == self.p1.id else self.p1
-        await loser.send(f"⚠️ **Confirm Result:** {winner.name} claims the win.", view=ResultView(winner.id, loser.id))
-        await interaction.response.send_message("Sent to opponent for confirmation.", ephemeral=True)
+        result_view = ResultView(winner.id, loser.id, thread_id=self.thread_id)
+        if self.thread_id:
+            # Post confirmation prompt in the shared match thread so both players can see it
+            await interaction.response.send_message(
+                f"⚠️ **Confirm Result:** {winner.mention} claims the win. {loser.mention}, please confirm or dispute.",
+                view=result_view
+            )
+        else:
+            # Fallback: DM the loser directly (no thread)
+            await loser.send(f"⚠️ **Confirm Result:** {winner.name} claims the win.", view=result_view)
+            await interaction.response.send_message("Sent to opponent for confirmation.", ephemeral=True)
     @discord.ui.button(label="Opponent No-Show", style=discord.ButtonStyle.secondary)
     async def report_no_show(self, interaction: discord.Interaction, button: discord.ui.Button):
         reporter = interaction.user
@@ -530,9 +555,57 @@ async def check_for_match():
                 player_queue.pop(p2_id)
                 
                 p1, p2 = bot.get_user(p1_id), bot.get_user(p2_id)
-                view = MatchReportView(p1, p2)
-                await p1.send(f"⚔️ **Match Found!** vs {p2.name} [{runs[str(p2_id)]['leader']}] [{runs[str(p2_id)]['base']}]", view=view)
-                await p2.send(f"⚔️ **Match Found!** vs {p1.name} [{runs[str(p1_id)]['leader']}] [{runs[str(p1_id)]['base']}]", view=view)
+
+                # --- Private Match Thread ---
+                thread = None
+                match_channel = bot.get_channel(MATCH_THREAD_CHANNEL_ID) if MATCH_THREAD_CHANNEL_ID else None
+                if match_channel:
+                    try:
+                        thread = await match_channel.create_thread(
+                            name=f"⚔️ {p1.name} vs {p2.name}",
+                            type=discord.ChannelType.private_thread,
+                            invitable=False
+                        )
+                        await thread.add_user(p1)
+                        await thread.add_user(p2)
+
+                        match_embed = discord.Embed(
+                            title="⚔️ Match Found!",
+                            description="Use the button below to report the result when your match is complete.",
+                            color=discord.Color.gold()
+                        )
+                        match_embed.add_field(
+                            name=p1.name,
+                            value=f"{runs[str(p1_id)]['leader']} / {runs[str(p1_id)]['base']}",
+                            inline=False
+                        )
+                        match_embed.add_field(
+                            name=p2.name,
+                            value=f"{runs[str(p2_id)]['leader']} / {runs[str(p2_id)]['base']}",
+                            inline=False
+                        )
+                        view = MatchReportView(p1, p2, thread_id=thread.id)
+                        await thread.send(embed=match_embed, view=view)
+
+                        thread_link = f"https://discord.com/channels/{SERVER_ID}/{thread.id}"
+                        for player, opp_run_id in [(p1, p2_id), (p2, p1_id)]:
+                            try:
+                                await player.send(
+                                    f"⚔️ **Match Found!** vs **{bot.get_user(opp_run_id).name}** "
+                                    f"[{runs[str(opp_run_id)]['leader']}] [{runs[str(opp_run_id)]['base']}]\n"
+                                    f"Head to your match thread: {thread_link}"
+                                )
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        logging.warning(f"Could not create match thread: {e}")
+                        thread = None
+
+                if not thread:
+                    # Fallback: send match info via DM only (no thread)
+                    view = MatchReportView(p1, p2)
+                    await p1.send(f"⚔️ **Match Found!** vs {p2.name} [{runs[str(p2_id)]['leader']}] [{runs[str(p2_id)]['base']}]", view=view)
+                    await p2.send(f"⚔️ **Match Found!** vs {p1.name} [{runs[str(p1_id)]['leader']}] [{runs[str(p1_id)]['base']}]", view=view)
                 return
 
 @bot.event
@@ -1232,10 +1305,13 @@ async def post_standings(ctx):
 
 
 @bot.command()
-@commands.is_owner() # Only YOU can trigger a pull/restart
-async def update_bot(ctx):
-    await ctx.send("📡 Pulling latest code from GitHub and restarting...")
-    # This shuts down the bot process
+@commands.is_owner()
+async def update_bot(ctx, branch: str = None):
+    """Pull latest code and restart. Optionally switch branch: !update_bot experimental"""
+    target = branch.strip() if branch else "main"
+    with open("target_branch", "w") as f:
+        f.write(target)
+    await ctx.send(f"📡 Switching to branch `{target}` and restarting...")
     await bot.close()
         
 @bot.command(name="meta")
