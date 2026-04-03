@@ -56,6 +56,8 @@ SERVER_ID = keys.SERVER_ID
 TROPHY_CHANNEL_ID = keys.TROPHY_CHANNEL_ID
 LEADERBOARD_CHANNEL_ID = keys.LEADERBOARD_CHANNEL_ID
 MATCH_THREAD_CHANNEL_ID = getattr(keys, 'MATCH_THREAD_CHANNEL_ID', None)  # Channel where private match threads are created
+QUEUE_CHANNEL_ID = getattr(keys, 'QUEUE_CHANNEL_ID', None)  # Channel where queue join notifications are posted
+QUEUE_ROLE_ID = getattr(keys, 'QUEUE_ROLE_ID', None)        # Role to ping on queue join notifications
 
 MAX_RUNS_PER_DAY = 2
 MATCH_LIMIT = 3
@@ -541,6 +543,20 @@ async def join_queue_logic(user):
     except discord.Forbidden:
         # Handle cases where the user has DMs disabled
         logging.warning(f"Could not send queue confirmation to {user.name} (DMs disabled).")
+
+    # Notify the queue channel so subscribers know someone joined
+    if QUEUE_CHANNEL_ID:
+        queue_channel = bot.get_channel(QUEUE_CHANNEL_ID)
+        if queue_channel:
+            role_mention = f"<@&{QUEUE_ROLE_ID}>" if QUEUE_ROLE_ID else ""
+            notify_embed = discord.Embed(
+                title="📥 A Player Has Joined the Queue",
+                description=f"**{user.display_name}** is looking for a match. Jump in!",
+                color=discord.Color.green()
+            )
+            notify_embed.set_footer(text="Type ENTER_QUEUE in your DMs with the bot to join.")
+            notify_embed.timestamp = datetime.now(timezone.utc).astimezone(LOCAL_TZ)
+            await queue_channel.send(content=role_mention or None, embed=notify_embed)
 
     # Proceed to check if an opponent is available
     await check_for_match()

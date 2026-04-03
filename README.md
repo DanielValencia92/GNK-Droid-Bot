@@ -54,9 +54,13 @@ SERVER_ID                       = 000000000000000000
 TROPHY_CHANNEL_ID               = 000000000000000000
 LEADERBOARD_CHANNEL_ID          = 000000000000000000
 MATCH_THREAD_CHANNEL_ID         = 000000000000000000  # Channel where private match threads are created
+QUEUE_CHANNEL_ID                = 000000000000000000  # Channel where queue join notifications are posted
+QUEUE_ROLE_ID                   = 000000000000000000  # Role to ping when a player joins the queue
 ```
 
 > **`MATCH_THREAD_CHANNEL_ID`** must be a standard text channel in your server. The bot requires **Create Private Threads**, **Manage Threads**, and **Send Messages in Threads** permissions in that channel. Private threads also require the server to be at **Boost Level 2** or above. If the key is omitted or the thread cannot be created, the bot falls back to DM-only match notifications.
+
+> **`QUEUE_CHANNEL_ID`** and **`QUEUE_ROLE_ID`** are optional. If set, the bot posts a notification embed to that channel mentioning the specified role whenever a player joins the matchmaking queue. If omitted, the feature is silently disabled.
 
 ### Card Data Files
 
