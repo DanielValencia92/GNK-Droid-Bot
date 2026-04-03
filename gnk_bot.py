@@ -874,7 +874,9 @@ async def on_message(message):
                     "`!get_run_data [RunID]` - Detailed view of a specific run.\n"
                     "`!force_result [W_ID] [L_ID]` - Manually log a match result.\n"
                     "`!cancel_run [ID]` - Delete a run and reset history.\n"
-                    "`!reactivate_run [RunID]` - Manually restore an archived run."
+                    "`!reactivate_run [RunID]` - Manually restore an archived run.\n"
+                    "`!post_weekly_report` - Post the weekly season report to the leaderboard channel.\n"
+                    "`!post_weekly_report_here` - Post the weekly season report in this channel (for testing; always forces output)."
                 ), 
                 inline=False
             )
