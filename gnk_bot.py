@@ -8,8 +8,10 @@ import os
 import uuid
 import csv
 import hashlib
+import random
 import pytz # New: For timezone handling
 from helper import generate_standings_image, parse_deck_json, generate_meta_standings, generate_user_performance_report, generate_user_mastery_report, generate_run_stats_report, generate_champion_standings, generate_tinkerer_standings, generate_final_showdown_standings
+from queue_messages import QUEUE_JOIN_MESSAGES
 from logging.handlers import TimedRotatingFileHandler
 import sys
 import keys
@@ -551,7 +553,7 @@ async def join_queue_logic(user):
             role_mention = f"<@&{QUEUE_ROLE_ID}>" if QUEUE_ROLE_ID else ""
             notify_embed = discord.Embed(
                 title="📥 A Player Has Joined the Queue",
-                description=f"**{user.display_name}** is looking for a match. Jump in!",
+                description=random.choice(QUEUE_JOIN_MESSAGES),
                 color=discord.Color.green()
             )
             notify_embed.set_footer(text="Type ENTER_QUEUE in your DMs with the bot to join.")
