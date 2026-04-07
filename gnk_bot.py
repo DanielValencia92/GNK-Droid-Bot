@@ -572,9 +572,13 @@ async def check_for_match():
     for i in range(len(uids)):
         for j in range(i + 1, len(uids)):
             p1_id, p2_id = uids[i], uids[j]
-            
-            # Check if they've played this run
-            if p2_id not in runs[str(p1_id)]["opponents_played"]:
+
+            # Skip if either player no longer has an active run (e.g. archived while in queue)
+            if str(p1_id) not in runs or str(p2_id) not in runs:
+                continue
+
+            # Check if they've played each other this run (check both sides to catch asymmetric state)
+            if p2_id not in runs[str(p1_id)]["opponents_played"] and p1_id not in runs[str(p2_id)]["opponents_played"]:
                 # Remove both from queue
                 player_queue.pop(p1_id)
                 player_queue.pop(p2_id)
