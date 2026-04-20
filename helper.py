@@ -6,7 +6,6 @@ import logging
 import requests
 from bs4 import BeautifulSoup
 import re
-from playwright.sync_api import sync_playwright
 import shutil
 
 BASE_DATA_PATH = 'card_data_files/all_bases.json'

@@ -14,8 +14,11 @@ from helper import generate_standings_image, parse_deck_json, generate_meta_stan
 from queue_messages import QUEUE_JOIN_MESSAGES
 from logging.handlers import TimedRotatingFileHandler
 import sys
-import keys
 import subprocess
+try:
+    import keys
+except ImportError:
+    keys = None
 
 # -- Logging setup
 LOG_FILENAME = 'league_bot.log'
@@ -43,23 +46,34 @@ logger.addHandler(console_handler)
 logging.info("Logging initialized: Rotating every 3 days.")
 
 # --- CONFIGURATION ---
-TOKEN = keys.TOKEN  
+# Values come from keys.py (local dev) or environment variables (production).
+if keys is not None:
+    TOKEN = keys.TOKEN
+    ADMIN_CHANNEL_ID = keys.ADMIN_CHANNEL_ID
+    REACTIVATION_REQUEST_CHANNEL_ID = keys.REACTIVATION_REQUEST_CHANNEL_ID
+    SERVER_ID = keys.SERVER_ID
+    TROPHY_CHANNEL_ID = keys.TROPHY_CHANNEL_ID
+    LEADERBOARD_CHANNEL_ID = keys.LEADERBOARD_CHANNEL_ID
+    MATCH_THREAD_CHANNEL_ID = getattr(keys, 'MATCH_THREAD_CHANNEL_ID', None)
+    QUEUE_CHANNEL_ID = getattr(keys, 'QUEUE_CHANNEL_ID', None)
+    QUEUE_ROLE_ID = getattr(keys, 'QUEUE_ROLE_ID', None)
+else:
+    TOKEN = os.environ['DISCORD_TOKEN']
+    ADMIN_CHANNEL_ID = int(os.environ['ADMIN_CHANNEL_ID'])
+    REACTIVATION_REQUEST_CHANNEL_ID = int(os.environ['REACTIVATION_REQUEST_CHANNEL_ID'])
+    SERVER_ID = int(os.environ['SERVER_ID'])
+    TROPHY_CHANNEL_ID = int(os.environ['TROPHY_CHANNEL_ID'])
+    LEADERBOARD_CHANNEL_ID = int(os.environ['LEADERBOARD_CHANNEL_ID'])
+    MATCH_THREAD_CHANNEL_ID = int(os.environ['MATCH_THREAD_CHANNEL_ID']) if os.environ.get('MATCH_THREAD_CHANNEL_ID') else None
+    QUEUE_CHANNEL_ID = int(os.environ['QUEUE_CHANNEL_ID']) if os.environ.get('QUEUE_CHANNEL_ID') else None
+    QUEUE_ROLE_ID = int(os.environ['QUEUE_ROLE_ID']) if os.environ.get('QUEUE_ROLE_ID') else None
+
 QUEUE_TIMEOUT_MINUTES = 30
 RUNS_FILE = "current_runs.json"
 COMPLETED_FILE = "completed_runs.json"
 COMPLETED_FILE_PREV = "completed_runs_prev.json"
 WEEKLY_REPORT_HASH_FILE = "weekly_report_hash.txt"
 HISTORY_FILE = "user_history.json"
-ADMIN_CHANNEL_ID = keys.ADMIN_CHANNEL_ID
-REACTIVATION_REQUEST_CHANNEL_ID = keys.REACTIVATION_REQUEST_CHANNEL_ID
-SERVER_ID = keys.SERVER_ID
-
-# ACTUAL TROPHY CHANNEL BELOW
-TROPHY_CHANNEL_ID = keys.TROPHY_CHANNEL_ID
-LEADERBOARD_CHANNEL_ID = keys.LEADERBOARD_CHANNEL_ID
-MATCH_THREAD_CHANNEL_ID = getattr(keys, 'MATCH_THREAD_CHANNEL_ID', None)  # Channel where private match threads are created
-QUEUE_CHANNEL_ID = getattr(keys, 'QUEUE_CHANNEL_ID', None)  # Channel where queue join notifications are posted
-QUEUE_ROLE_ID = getattr(keys, 'QUEUE_ROLE_ID', None)        # Role to ping on queue join notifications
 
 MAX_RUNS_PER_DAY = 2
 MATCH_LIMIT = 3

@@ -1,0 +1,9 @@
+discord.py==2.6.4
+pandas==3.0.0
+matplotlib==3.10.6
+dataframe-image
+pytz
+beautifulsoup4
+lxml==6.0.0
+requests==2.32.4
+pillow==11.2.1
