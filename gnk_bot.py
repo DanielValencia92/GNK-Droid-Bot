@@ -296,15 +296,36 @@ class DeckDownloadView(discord.ui.View):
             return
 
         file_bytes = io.BytesIO(deck_json.encode("utf-8"))
-        await interaction.response.send_message(
-            embed=discord.Embed(
-                title="📋 Your Deck JSON",
-                description="Import this file into SWUDB to load your registered deck.",
-                color=discord.Color.blurple()
-            ),
-            file=discord.File(file_bytes, filename="deck.json"),
-            ephemeral=True
-        )
+
+        # Minify the JSON for the code block (removes whitespace to stay under Discord's 2000-char limit).
+        try:
+            minified = json.dumps(json.loads(deck_json), separators=(',', ':'))
+        except Exception:
+            minified = deck_json
+
+        code_block = f"```json\n{minified}\n```"
+        # 2000 char limit; leave headroom for the instruction line above the block.
+        if len(code_block) <= 1900:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="📋 Your Deck JSON",
+                    description="Copy the text below and paste it into SWUDB to load your registered deck.",
+                    color=discord.Color.blurple()
+                ),
+                content=code_block,
+                ephemeral=True
+            )
+        else:
+            # Fallback to file for unusually large decks.
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="📋 Your Deck JSON",
+                    description="Your deck JSON is too large to display inline. Download the file below and import it into SWUDB.",
+                    color=discord.Color.blurple()
+                ),
+                file=discord.File(file_bytes, filename="deck.json"),
+                ephemeral=True
+            )
 
 
 class ReactivationApprovalView(discord.ui.View):

@@ -30,16 +30,15 @@ pandas
 dataframe_image
 matplotlib
 pytz
-playwright
 beautifulsoup4
 requests
+psycopg2-binary
 ```
 
 Install dependencies:
 
 ```bash
 pip install -r requirements.txt
-playwright install
 ```
 
 ### Configuration
@@ -64,12 +63,13 @@ QUEUE_ROLE_ID                   = 000000000000000000  # Role to ping when a play
 
 ### Card Data Files
 
-Place the following JSON files (card database exports) in `card_data_files/`:
+The card database files in `card_data_files/` are used to resolve deck IDs from SWUDB JSON exports into human-readable leader/base names. On first setup, run the following admin command in Discord after the bot is online:
 
-- `all_leaders.json`
-- `all_bases.json`
+```
+!update_card_data
+```
 
-These are used to resolve deck IDs from SWUDB JSON exports into human-readable leader/base names.
+This fetches the latest leaders and bases from the SWUDB API and writes `card_data_files/all_leaders.json` and `card_data_files/all_bases.json` automatically. Re-run the command whenever new cards are released.
 
 ### Running the Bot
 
@@ -107,7 +107,7 @@ The branch can be changed at runtime using the `!update_bot` command — see Adm
 |---|---|
 | *(SWUDB JSON paste)* | Registers your leader/base after clicking the Start Run button |
 | `ENTER_QUEUE` | Join the matchmaking queue (requires an active run) |
-| `STATUS` | View your current run: leader, base, match history, progress |
+| `STATUS` | View your current run: leader, base, match history, progress. If you registered a deck JSON, a button to copy/download it is included. |
 | `RUN_STATS` | Get a personal stats image — total runs, overall win rate, and a breakdown by leader/base combo |
 | `MY_DATA` | Download your full run history as a JSON file |
 | `STOP` | Leave the matchmaking queue |
@@ -146,6 +146,7 @@ The branch can be changed at runtime using the `!update_bot` command — see Adm
 | `!mastery_report` | Generate a per-player unique positive leaders/win rate image |
 | `!test_trophy <member>` | Test the 3-0 DM and trophy announcement flow |
 | `!update_bot [branch]` | Pull the latest code and restart. Writes `branch` (default: `main`) to the `target_branch` file used by `deploy.sh`. Example: `!update_bot experimental` |
+| `!update_card_data` | Fetch the latest leaders and bases from the SWUDB API and overwrite `card_data_files/all_leaders.json` and `card_data_files/all_bases.json` |
 | `!version` | Show the current git build info |
 | `!sync` | Sync slash commands to the server |
 
@@ -194,7 +195,18 @@ Personal stats image sent directly to the requesting player. Shows:
 
 ---
 
-## Trophy System
+## Deck JSON Reference
+
+When a player registers their deck by pasting a SWUDB JSON export, the raw JSON is stored with their run. This allows them to retrieve the exact deck they registered at any time:
+
+- **During a match:** A "📋 Deck Reference" button appears in the private match thread. Each player clicks it to privately receive their own deck JSON as an inline code block (one-click copy). If the JSON is unusually large, a downloadable file is sent instead.
+- **Via `STATUS`:** The same button is included at the bottom of the status response whenever a deck JSON is on file for the current run.
+
+Players who started a run before this feature was added will not have a stored deck JSON and will see an error if they click the button.
+
+---
+
+
 
 A **3-0 run** (3 wins, 0 losses) automatically triggers:
 1. A public embed announcement in the configured trophy channel mentioning the player
@@ -207,10 +219,12 @@ A **3-0 run** (3 wins, 0 losses) automatically triggers:
 ```
 gnk_bot.py          # Main bot logic — commands, events, tasks, views
 helper.py           # Image generation (standings, reports, meta) and deck parsing utilities
+db.py               # PostgreSQL key-value persistence layer (no-op when DATABASE_URL is not set)
 deploy.sh           # Restart loop script; reads target branch from target_branch file
+requirements.txt    # Python dependencies
 keys.py             # Secret configuration (not committed)
 target_branch       # Plain text file containing the Git branch to pull on restart (not committed)
 card_data_files/
-  all_leaders.json  # Leader card database
-  all_bases.json    # Base card database
+  all_leaders.json  # Leader card database (populated by !update_card_data)
+  all_bases.json    # Base card database (populated by !update_card_data)
 ```
