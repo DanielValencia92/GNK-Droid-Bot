@@ -54,9 +54,13 @@ SERVER_ID                       = 000000000000000000
 TROPHY_CHANNEL_ID               = 000000000000000000
 LEADERBOARD_CHANNEL_ID          = 000000000000000000
 MATCH_THREAD_CHANNEL_ID         = 000000000000000000  # Channel where private match threads are created
+QUEUE_CHANNEL_ID                = 000000000000000000  # Channel where queue join notifications are posted
+QUEUE_ROLE_ID                   = 000000000000000000  # Role to ping when a player joins the queue
 ```
 
 > **`MATCH_THREAD_CHANNEL_ID`** must be a standard text channel in your server. The bot requires **Create Private Threads**, **Manage Threads**, and **Send Messages in Threads** permissions in that channel. Private threads also require the server to be at **Boost Level 2** or above. If the key is omitted or the thread cannot be created, the bot falls back to DM-only match notifications.
+
+> **`QUEUE_CHANNEL_ID`** and **`QUEUE_ROLE_ID`** are optional. If set, the bot posts a notification embed to that channel mentioning the specified role whenever a player joins the matchmaking queue. If omitted, the feature is silently disabled.
 
 ### Card Data Files
 
@@ -93,6 +97,7 @@ The branch can be changed at runtime using the `!update_bot` command — see Adm
 | `completed_runs.json` | Archived completed runs, keyed by run ID |
 | `completed_runs_prev.json` | Previous snapshot used for standings delta detection |
 | `user_history.json` | Per-user run start timestamps for daily limit enforcement |
+| `weekly_report_hash.txt` | SHA-256 hash of `completed_runs.json` at the time of the last weekly report post; used to skip the report if nothing has changed |
 
 ---
 
@@ -134,6 +139,8 @@ The branch can be changed at runtime using the `!update_bot` command — see Adm
 | `!get_run_data <run_id>` | View full details of any run (active or completed) |
 | `!delete_run <run_id>` | Permanently remove a run from all records |
 | `!post_standings` | Manually post the current standings image |
+| `!post_weekly_report` | Manually trigger the weekly season report to the leaderboard channel (respects the unchanged-data check) |
+| `!post_weekly_report_here` | Trigger the weekly season report in the current channel; always forces output regardless of data changes — useful for testing |
 | `!meta` | Generate a leader + aspect win rate breakdown image |
 | `!user_report` | Generate a per-player wins/losses/positive runs performance image |
 | `!mastery_report` | Generate a per-player unique positive leaders/win rate image |
@@ -148,7 +155,7 @@ The branch can be changed at runtime using the `!update_bot` command — see Adm
 
 | Task | Schedule | Description |
 |---|---|---|
-| Daily standings report | 8:30 AM PT | Posts a standings image to the leaderboard channel if data has changed since the last post |
+| Weekly season report | 8:30 AM PT every Monday | Posts four standings images (Champion, Tinkerer, Final Showdown, Meta) to the leaderboard channel. Skipped automatically if `completed_runs.json` has not changed since the last post. |
 | Queue cleanup | Every 25 minutes | Removes players who have been in queue for over 60 minutes and notifies them |
 | Passive timeout cleanup | Every 2 minutes | Clears expired deck registration and reactivation request sessions |
 | Presence update | Every 60 seconds | Updates the bot's status to reflect the number of players currently in queue |
@@ -156,6 +163,18 @@ The branch can be changed at runtime using the `!update_bot` command — see Adm
 ---
 
 ## Reports
+
+### Weekly Season Report (automated + `!post_weekly_report`)
+Posted every Monday at 8:30 AM PT to the leaderboard channel. Posts a header embed followed by four images covering all award categories:
+
+| Image | Description |
+|---|---|
+| 👑 Champion Standings | Players ranked by number of 3-0 trophy runs, then total runs completed |
+| 🛠️ Tinkerer Standings | Players ranked by unique leader/base combos taken to a positive result (≥2 wins, wins > losses), then win % |
+| 📈 Final Showdown Standings | Players ranked by win % across runs completed in the last 14 days, then total games in that window |
+| ⚔️ Meta Report | Leader + Aspect win rates across all completed runs |
+
+The report is skipped if `completed_runs.json` has not changed since the last post. Use `!post_weekly_report_here` to force output in the current channel regardless.
 
 ### `!user_report` — Player Performance
 Tabulated PNG showing each player's total **Wins**, **Losses**, **Positive Runs**, **Total Games**, and **Win %**, sorted by Win %.

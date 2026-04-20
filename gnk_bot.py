@@ -7,8 +7,11 @@ import json
 import os
 import uuid
 import csv
+import hashlib
+import random
 import pytz # New: For timezone handling
-from helper import generate_standings_image, parse_deck_json, generate_meta_standings, generate_user_performance_report, generate_user_mastery_report, generate_run_stats_report
+from helper import generate_standings_image, parse_deck_json, generate_meta_standings, generate_user_performance_report, generate_user_mastery_report, generate_run_stats_report, generate_champion_standings, generate_tinkerer_standings, generate_final_showdown_standings
+from queue_messages import QUEUE_JOIN_MESSAGES
 from logging.handlers import TimedRotatingFileHandler
 import sys
 import keys
@@ -45,6 +48,7 @@ QUEUE_TIMEOUT_MINUTES = 30
 RUNS_FILE = "current_runs.json"
 COMPLETED_FILE = "completed_runs.json"
 COMPLETED_FILE_PREV = "completed_runs_prev.json"
+WEEKLY_REPORT_HASH_FILE = "weekly_report_hash.txt"
 HISTORY_FILE = "user_history.json"
 ADMIN_CHANNEL_ID = keys.ADMIN_CHANNEL_ID
 REACTIVATION_REQUEST_CHANNEL_ID = keys.REACTIVATION_REQUEST_CHANNEL_ID
@@ -54,6 +58,8 @@ SERVER_ID = keys.SERVER_ID
 TROPHY_CHANNEL_ID = keys.TROPHY_CHANNEL_ID
 LEADERBOARD_CHANNEL_ID = keys.LEADERBOARD_CHANNEL_ID
 MATCH_THREAD_CHANNEL_ID = getattr(keys, 'MATCH_THREAD_CHANNEL_ID', None)  # Channel where private match threads are created
+QUEUE_CHANNEL_ID = getattr(keys, 'QUEUE_CHANNEL_ID', None)  # Channel where queue join notifications are posted
+QUEUE_ROLE_ID = getattr(keys, 'QUEUE_ROLE_ID', None)        # Role to ping on queue join notifications
 
 MAX_RUNS_PER_DAY = 2
 MATCH_LIMIT = 3
@@ -302,14 +308,19 @@ class ResultView(discord.ui.View):
                 try: await loser_user.send(msg)
                 except: pass
 
-        # Delete the match thread now that the result is confirmed
+        # Delete the match thread after a short cooldown so players can finish chatting.
+        # Runs as a background task so run-completion logic below is not delayed.
         if self.thread_id:
-            thread = bot.get_channel(self.thread_id)
-            if thread:
-                try:
-                    await thread.delete()
-                except Exception as e:
-                    logging.warning(f"Could not delete match thread {self.thread_id}: {e}")
+            async def delayed_thread_delete(thread_id):
+                thread = bot.get_channel(thread_id)
+                if thread:
+                    try:
+                        await thread.send("✅ Result confirmed! This thread will be deleted in **3 minutes**.")
+                        await asyncio.sleep(180)
+                        await thread.delete()
+                    except Exception as e:
+                        logging.warning(f"Could not delete match thread {thread_id}: {e}")
+            bot.loop.create_task(delayed_thread_delete(self.thread_id))
 
         # Check for Run Completion (3 matches)
         for uid in [self.winner_id, self.loser_id]:
@@ -535,6 +546,20 @@ async def join_queue_logic(user):
         # Handle cases where the user has DMs disabled
         logging.warning(f"Could not send queue confirmation to {user.name} (DMs disabled).")
 
+    # Notify the queue channel so subscribers know someone joined
+    if QUEUE_CHANNEL_ID:
+        queue_channel = bot.get_channel(QUEUE_CHANNEL_ID)
+        if queue_channel:
+            role_mention = f"<@&{QUEUE_ROLE_ID}>" if QUEUE_ROLE_ID else ""
+            notify_embed = discord.Embed(
+                title="📥 A Player Has Joined the Queue",
+                description=random.choice(QUEUE_JOIN_MESSAGES),
+                color=discord.Color.green()
+            )
+            notify_embed.set_footer(text="Type ENTER_QUEUE in your DMs with the bot to join.")
+            notify_embed.timestamp = datetime.now(timezone.utc).astimezone(LOCAL_TZ)
+            await queue_channel.send(content=role_mention or None, embed=notify_embed)
+
     # Proceed to check if an opponent is available
     await check_for_match()
 
@@ -547,9 +572,13 @@ async def check_for_match():
     for i in range(len(uids)):
         for j in range(i + 1, len(uids)):
             p1_id, p2_id = uids[i], uids[j]
-            
-            # Check if they've played this run
-            if p2_id not in runs[str(p1_id)]["opponents_played"]:
+
+            # Skip if either player no longer has an active run (e.g. archived while in queue)
+            if str(p1_id) not in runs or str(p2_id) not in runs:
+                continue
+
+            # Check if they've played each other this run (check both sides to catch asymmetric state)
+            if p2_id not in runs[str(p1_id)]["opponents_played"] and p1_id not in runs[str(p2_id)]["opponents_played"]:
                 # Remove both from queue
                 player_queue.pop(p1_id)
                 player_queue.pop(p2_id)
@@ -867,7 +896,9 @@ async def on_message(message):
                     "`!get_run_data [RunID]` - Detailed view of a specific run.\n"
                     "`!force_result [W_ID] [L_ID]` - Manually log a match result.\n"
                     "`!cancel_run [ID]` - Delete a run and reset history.\n"
-                    "`!reactivate_run [RunID]` - Manually restore an archived run."
+                    "`!reactivate_run [RunID]` - Manually restore an archived run.\n"
+                    "`!post_weekly_report` - Post the weekly season report to the leaderboard channel.\n"
+                    "`!post_weekly_report_here` - Post the weekly season report in this channel (for testing; always forces output)."
                 ), 
                 inline=False
             )
@@ -1251,7 +1282,7 @@ async def on_ready():
     queue_cleanup.start()
     passive_timeout_cleanup.start()
     bot.add_view(QueueView())
-    daily_standings_report.start()
+    weekly_report.start()
 
     if not update_presence.is_running():
         update_presence.start()
@@ -1302,6 +1333,22 @@ async def post_standings(ctx):
     else:
         # Give the admin feedback, even if the daily task stays silent
         await ctx.send("⚠️ No new standings generated. No completed runs or no changes since last report.")
+
+
+@bot.command(name="post_weekly_report")
+@commands.is_owner()
+async def post_weekly_report(ctx):
+    """[ADMIN] Manually trigger the weekly season report to the standings channel."""
+    await ctx.send("📊 Generating weekly report...")
+    await _post_weekly_report_to_channel()
+
+
+@bot.command(name="post_weekly_report_here")
+@commands.is_owner()
+async def post_weekly_report_here(ctx):
+    """[ADMIN] Manually trigger the weekly season report in this channel (useful for testing)."""
+    await ctx.send("📊 Generating weekly report here...")
+    await _post_weekly_report_to_channel(channel=ctx.channel, force=True)
 
 
 @bot.command()
@@ -1393,30 +1440,66 @@ def get_loop_time(hour, minute):
     current_offset = datetime.now(timezone.utc).astimezone(LOCAL_TZ).utcoffset()
     return time(hour=hour, minute=minute, tzinfo=timezone(current_offset))
 
-@tasks.loop(time=get_loop_time(8,30))
-async def daily_standings_report():
-    channel = bot.get_channel(LEADERBOARD_CHANNEL_ID)
-    if not channel: 
+@tasks.loop(time=get_loop_time(8, 30))
+async def weekly_report():
+    """Posts the weekly season standings report every Monday at 8:30 AM PT."""
+    now = datetime.now(timezone.utc).astimezone(LOCAL_TZ)
+    if now.weekday() != 0:  # 0 = Monday
+        return
+    await _post_weekly_report_to_channel()
+
+async def _post_weekly_report_to_channel(channel=None, force=False):
+    """Core logic for posting all four weekly report images to a channel.
+    Defaults to LEADERBOARD_CHANNEL_ID if no channel is provided.
+    Pass force=True to skip the unchanged-data check (e.g. for testing).
+    """
+    if channel is None:
+        channel = bot.get_channel(LEADERBOARD_CHANNEL_ID)
+    if not channel:
+        logging.warning("Weekly report: leaderboard channel not found.")
         return
 
-    image_path = generate_standings_image(COMPLETED_FILE, COMPLETED_FILE_PREV)
-    
-    # Only proceed if an image was successfully created
-    if image_path and os.path.exists(image_path):
-        embed = discord.Embed(
-            title="📊 Daily League Standings",
-            description="Here are the current rankings for the season!",
-            color=discord.Color.purple(),
-            timestamp=datetime.now(timezone.utc).astimezone(LOCAL_TZ)
-        )
-        file = discord.File(image_path, filename="standings.png")
-        embed.set_image(url="attachment://standings.png")
-        await channel.send(embed=embed, file=file)
-        
-        # Optional: Clean up the image file after sending
-        os.remove(image_path)
-    else:
-        logging.info("No new standings to post today.")
+    # Skip if completed_runs.json hasn't changed since the last posted report
+    if not force and os.path.exists(COMPLETED_FILE):
+        with open(COMPLETED_FILE, "rb") as f:
+            current_hash = hashlib.sha256(f.read()).hexdigest()
+        prev_hash = None
+        if os.path.exists(WEEKLY_REPORT_HASH_FILE):
+            with open(WEEKLY_REPORT_HASH_FILE, "r") as f:
+                prev_hash = f.read().strip()
+        if current_hash == prev_hash:
+            logging.info("Weekly report: no changes since last report, skipping.")
+            return
+
+    await channel.send(embed=discord.Embed(
+        title="📅 Weekly Season Report",
+        description="Here's a full breakdown of current season standings across all award categories.",
+        color=discord.Color.gold(),
+        timestamp=datetime.now(timezone.utc).astimezone(LOCAL_TZ)
+    ))
+    reports = [
+        (generate_champion_standings(COMPLETED_FILE), "champion_standings.png", "👑 Champion Standings", "Most 3-0 trophy runs this season.", discord.Color.gold()),
+        (generate_tinkerer_standings(COMPLETED_FILE), "tinkerer_standings.png", "🛠️ Tinkerer Standings", "Most unique leaders taken to a positive result (2-1 or better).", discord.Color.purple()),
+        (generate_final_showdown_standings(COMPLETED_FILE), "final_showdown.png", "📈 Final Showdown Standings", "Best win rate across runs completed in the last 2 weeks.", discord.Color.red()),
+        (generate_meta_standings(COMPLETED_FILE, "./card_data_files/all_bases.json"), "meta_standings.png", "⚔️ Meta Report", "Leader + Aspect win rates across all completed runs.", discord.Color.blue()),
+    ]
+    for image_path, filename, title, description, color in reports:
+        if image_path and os.path.exists(image_path):
+            embed = discord.Embed(title=title, description=description, color=color)
+            file = discord.File(image_path, filename=filename)
+            embed.set_image(url=f"attachment://{filename}")
+            await channel.send(embed=embed, file=file)
+            os.remove(image_path)
+        else:
+            await channel.send(f"⚠️ No data available for **{title}** yet.")
+
+    # Save a hash of the data so we can skip next week if nothing changed.
+    # Only saved for non-forced posts to avoid test runs masking real changes.
+    if not force and os.path.exists(COMPLETED_FILE):
+        with open(COMPLETED_FILE, "rb") as f:
+            new_hash = hashlib.sha256(f.read()).hexdigest()
+        with open(WEEKLY_REPORT_HASH_FILE, "w") as f:
+            f.write(new_hash)
 
 @bot.command(name="test_trophy")
 @commands.is_owner()

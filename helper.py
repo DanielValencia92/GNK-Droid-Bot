@@ -382,6 +382,149 @@ def parse_deck_json(user_json_str):
         print(f"Parsing error: {e}")
         return "Private Leader", "Private Base"
 
+def generate_champion_standings(completed_file):
+    """Ranks players by number of 3-0 trophy runs (most trophies first)."""
+    if not os.path.exists(completed_file):
+        return None
+    with open(completed_file, 'r') as f:
+        completed_runs = json.load(f)
+
+    player_stats = {}
+    for run in completed_runs.values():
+        uid = str(run.get("user_id"))
+        name = run.get("name", "Unknown")
+        results = run.get("match_results", [])
+        wins = sum(1 for m in results if m["res"] == "W")
+        losses = sum(1 for m in results if m["res"] == "L")
+
+        if uid not in player_stats:
+            player_stats[uid] = {"Player": name, "Trophies": 0, "Runs Completed": 0}
+
+        player_stats[uid]["Runs Completed"] += 1
+        if wins == 3 and losses == 0:
+            player_stats[uid]["Trophies"] += 1
+
+    if not player_stats:
+        return None
+
+    df = pd.DataFrame.from_dict(player_stats, orient='index')
+    df = df.sort_values(by=["Trophies", "Runs Completed"], ascending=False).reset_index(drop=True)
+    df.index += 1
+
+    output_file = "champion_standings.png"
+    df_styled = df.style.background_gradient(subset=["Trophies"], cmap='YlOrRd')
+    dfi.export(df_styled, output_file, table_conversion='matplotlib')
+    return output_file
+
+
+def generate_tinkerer_standings(completed_file):
+    """Ranks players by number of unique leaders taken to a positive result (2-1 or better)."""
+    if not os.path.exists(completed_file):
+        return None
+    with open(completed_file, 'r') as f:
+        completed_runs = json.load(f)
+
+    user_stats = {}
+    for run in completed_runs.values():
+        uid = str(run.get("user_id"))
+        name = run.get("name", "Unknown")
+        leader = run.get("leader", "Unknown")
+        base = run.get("base", "Unknown")
+        combo = f"{leader} / {base}"
+
+        if uid not in user_stats:
+            user_stats[uid] = {"Player": name, "PosLeaders": set(), "Wins": 0, "Losses": 0}
+
+        results = run.get("match_results", [])
+        run_wins = sum(1 for m in results if m["res"] == "W")
+        run_losses = sum(1 for m in results if m["res"] == "L")
+        user_stats[uid]["Wins"] += run_wins
+        user_stats[uid]["Losses"] += run_losses
+
+        if run_wins > run_losses and run_wins >= 2:
+            user_stats[uid]["PosLeaders"].add(combo)
+
+    rows = []
+    for stats in user_stats.values():
+        total = stats["Wins"] + stats["Losses"]
+        rows.append({
+            "Player": stats["Player"],
+            "Unique Leaders (Positive)": len(stats["PosLeaders"]),
+            "Total Record": f"{stats['Wins']}W - {stats['Losses']}L",
+            "Win %": round(stats["Wins"] / total * 100, 1) if total > 0 else 0.0
+        })
+
+    if not rows:
+        return None
+
+    df = pd.DataFrame(rows)
+    df = df.sort_values(by=["Unique Leaders (Positive)", "Win %"], ascending=False).reset_index(drop=True)
+    df.index += 1
+
+    output_file = "tinkerer_standings.png"
+    df_styled = df.style.background_gradient(subset=["Unique Leaders (Positive)"], cmap='Purples') \
+                        .background_gradient(subset=["Win %"], cmap='Greens')
+    dfi.export(df_styled, output_file, table_conversion='matplotlib')
+    return output_file
+
+
+def generate_final_showdown_standings(completed_file, days=14):
+    """Ranks players by win rate across runs completed in the last `days` days."""
+    if not os.path.exists(completed_file):
+        return None
+    with open(completed_file, 'r') as f:
+        completed_runs = json.load(f)
+
+    from datetime import datetime, timedelta
+    cutoff = datetime.now() - timedelta(days=days)
+
+    player_stats = {}
+    for run in completed_runs.values():
+        ended_at_str = run.get("ended_at")
+        if not ended_at_str:
+            continue
+        try:
+            ended_at = datetime.fromisoformat(ended_at_str)
+        except ValueError:
+            continue
+        if ended_at < cutoff:
+            continue
+
+        uid = str(run.get("user_id"))
+        name = run.get("name", "Unknown")
+        results = run.get("match_results", [])
+        wins = sum(1 for m in results if m["res"] == "W")
+        losses = sum(1 for m in results if m["res"] == "L")
+
+        if uid not in player_stats:
+            player_stats[uid] = {"Player": name, "Wins": 0, "Losses": 0}
+        player_stats[uid]["Wins"] += wins
+        player_stats[uid]["Losses"] += losses
+
+    if not player_stats:
+        return None
+
+    rows = []
+    for stats in player_stats.values():
+        total = stats["Wins"] + stats["Losses"]
+        rows.append({
+            "Player": stats["Player"],
+            "Win %": round(stats["Wins"] / total * 100, 1) if total > 0 else 0.0,
+            "Wins": stats["Wins"],
+            "Losses": stats["Losses"],
+            "Games (Last 2 Wks)": total
+        })
+
+    df = pd.DataFrame(rows)
+    df = df.sort_values(by=["Win %", "Games (Last 2 Wks)"], ascending=False).reset_index(drop=True)
+    df.index += 1
+
+    output_file = "final_showdown.png"
+    df_styled = df.style.background_gradient(subset=["Win %"], cmap='Reds')
+    dfi.export(df_styled, output_file, table_conversion='matplotlib')
+    return output_file
+
+
 # --- DATA PERSISTENCE HELPERS ---
 def load_json(filename):
     if os.path.exists(filename):
