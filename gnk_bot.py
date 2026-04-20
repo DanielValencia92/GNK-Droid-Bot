@@ -9,6 +9,7 @@ import uuid
 import csv
 import hashlib
 import random
+import io
 import pytz # New: For timezone handling
 from helper import generate_standings_image, parse_deck_json, generate_meta_standings, generate_user_performance_report, generate_user_mastery_report, generate_run_stats_report, generate_champion_standings, generate_tinkerer_standings, generate_final_showdown_standings
 from queue_messages import QUEUE_JOIN_MESSAGES
@@ -266,6 +267,45 @@ async def archive_run(user_id):
         player_queue.pop(user_id, None) 
         
     return run_data
+
+class DeckDownloadView(discord.ui.View):
+    def __init__(self, p1_id, p2_id):
+        super().__init__(timeout=None)
+        self.p1_id = p1_id
+        self.p2_id = p2_id
+
+    @discord.ui.button(label="📋 Get My Deck JSON", style=discord.ButtonStyle.secondary)
+    async def get_deck(self, interaction: discord.Interaction, button: discord.ui.Button):
+        uid = interaction.user.id
+        if uid not in (self.p1_id, self.p2_id):
+            await interaction.response.send_message("Only match participants can use this.", ephemeral=True)
+            return
+
+        runs = load_json(RUNS_FILE)
+        run_data = runs.get(str(uid))
+        deck_json = run_data.get("deck_json") if run_data else None
+
+        if not deck_json:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    description="❌ No deck JSON was saved for your current run.",
+                    color=discord.Color.red()
+                ),
+                ephemeral=True
+            )
+            return
+
+        file_bytes = io.BytesIO(deck_json.encode("utf-8"))
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="📋 Your Deck JSON",
+                description="Import this file into SWUDB to load your registered deck.",
+                color=discord.Color.blurple()
+            ),
+            file=discord.File(file_bytes, filename="deck.json"),
+            ephemeral=True
+        )
+
 
 class ReactivationApprovalView(discord.ui.View):
     def __init__(self, user_id, run_id):
@@ -653,6 +693,14 @@ async def check_for_match():
                         view = MatchReportView(p1, p2, thread_id=thread.id)
                         await thread.send(embed=match_embed, view=view)
 
+                        deck_view = DeckDownloadView(p1_id, p2_id)
+                        deck_embed = discord.Embed(
+                            title="📋 Deck Reference",
+                            description="Click below to privately receive your deck JSON so you can load the exact deck you registered.",
+                            color=discord.Color.blurple()
+                        )
+                        await thread.send(embed=deck_embed, view=deck_view)
+
                         thread_link = f"https://discord.com/channels/{SERVER_ID}/{thread.id}"
                         for player, opp_run_id in [(p1, p2_id), (p2, p1_id)]:
                             try:
@@ -672,6 +720,14 @@ async def check_for_match():
                     view = MatchReportView(p1, p2)
                     await p1.send(f"⚔️ **Match Found!** vs {p2.name} [{runs[str(p2_id)]['leader']}] [{runs[str(p2_id)]['base']}]", view=view)
                     await p2.send(f"⚔️ **Match Found!** vs {p1.name} [{runs[str(p1_id)]['leader']}] [{runs[str(p1_id)]['base']}]", view=view)
+                    deck_view = DeckDownloadView(p1_id, p2_id)
+                    deck_embed = discord.Embed(
+                        title="📋 Deck Reference",
+                        description="Click below to receive your deck JSON so you can load the exact deck you registered.",
+                        color=discord.Color.blurple()
+                    )
+                    await p1.send(embed=deck_embed, view=deck_view)
+                    await p2.send(embed=deck_embed, view=deck_view)
                 return
 
 @bot.event
@@ -760,6 +816,7 @@ async def on_message(message):
                 "run_id": run_id, 
                 "leader": leader_name,
                 "base": base_name,
+                "deck_json": content,
                 "opponents_played": [], 
                 "match_results": []
             }
@@ -1404,8 +1461,44 @@ async def update_bot(ctx, branch: str = None):
         f.write(target)
     await ctx.send(f"📡 Switching to branch `{target}` and restarting...")
     await bot.close()
-        
-@bot.command(name="meta")
+
+@bot.command(name="update_card_data")
+@commands.is_owner()
+async def update_card_data(ctx):
+    """Fetches the latest leaders and bases from the SWUDB API and updates local card data files."""
+    import requests as req
+
+    CARD_DATA_DIR = "./card_data_files"
+    ENDPOINTS = {
+        "all_leaders.json": "https://api.swu-db.com/cards/search?q=type:leader&pretty=true",
+        "all_bases.json":   "https://api.swu-db.com/cards/search?q=type:base&pretty=true",
+    }
+
+    os.makedirs(CARD_DATA_DIR, exist_ok=True)
+    await ctx.send("📡 Fetching card data from SWUDB API...")
+
+    results = []
+    for filename, url in ENDPOINTS.items():
+        try:
+            response = req.get(url, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            count = len(data.get("data", []))
+            filepath = os.path.join(CARD_DATA_DIR, filename)
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            results.append(f"✅ `{filename}` — {count} cards saved.")
+        except Exception as e:
+            results.append(f"❌ `{filename}` — Failed: {e}")
+
+    embed = discord.Embed(
+        title="🃏 Card Data Update",
+        description="\n".join(results),
+        color=discord.Color.green() if all(r.startswith("✅") for r in results) else discord.Color.red()
+    )
+    await ctx.send(embed=embed)
+
+
 @commands.is_owner()
 async def meta_standings(ctx):
     """Generates an image showing Leader + Aspect win rates."""
