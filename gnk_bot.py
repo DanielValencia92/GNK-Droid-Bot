@@ -15,6 +15,7 @@ from queue_messages import QUEUE_JOIN_MESSAGES
 from logging.handlers import TimedRotatingFileHandler
 import sys
 import subprocess
+import db
 try:
     import keys
 except ImportError:
@@ -74,6 +75,14 @@ COMPLETED_FILE = "completed_runs.json"
 COMPLETED_FILE_PREV = "completed_runs_prev.json"
 WEEKLY_REPORT_HASH_FILE = "weekly_report_hash.txt"
 HISTORY_FILE = "user_history.json"
+
+# Maps local filenames → DB keys for persistent storage.
+DB_FILE_MAP = {
+    RUNS_FILE:         "current_runs",
+    COMPLETED_FILE:    "completed_runs",
+    COMPLETED_FILE_PREV: "completed_runs_prev",
+    HISTORY_FILE:      "user_history",
+}
 
 MAX_RUNS_PER_DAY = 2
 MATCH_LIMIT = 3
@@ -178,12 +187,26 @@ def get_last_3am_pacific():
 
 # --- DATA PERSISTENCE HELPERS ---
 def load_json(filename):
+    # Prefer DB when available (survives container restarts).
+    if db.is_enabled():
+        key = DB_FILE_MAP.get(filename)
+        if key:
+            return db.load(key)
     if os.path.exists(filename):
-        with open(filename, "r") as f: return json.load(f)
+        with open(filename, "r") as f:
+            return json.load(f)
     return {}
 
 def save_json(filename, data):
-    with open(filename, "w") as f: json.dump(data, f, indent=4)
+    # Always write the local file so helper functions that call open() directly
+    # (generate_standings_image, etc.) continue to work without changes.
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=4)
+    # Mirror to DB when available.
+    if db.is_enabled():
+        key = DB_FILE_MAP.get(filename)
+        if key:
+            db.save(key, data)
 
 def can_start_run(user_id):
     history = load_json(HISTORY_FILE)
@@ -1293,6 +1316,13 @@ async def announce_trophy(user_id, run_data):
 
 @bot.event
 async def on_ready():
+    # Initialise DB and restore JSON files from the database so that any data
+    # written before the last restart is available to helper functions that
+    # read files directly (generate_standings_image, etc.).
+    if db.is_enabled():
+        db.init()
+        db.restore_files(DB_FILE_MAP)
+
     queue_cleanup.start()
     passive_timeout_cleanup.start()
     bot.add_view(QueueView())
