@@ -918,7 +918,13 @@ async def on_message(message):
         embed.timestamp = datetime.now(timezone.utc).astimezone(LOCAL_TZ)
         await message.channel.send(embed=embed)
 
-    # --- 5. DATA EXPORT ---
+        if player_data.get("deck_json"):
+            deck_embed = discord.Embed(
+                title="📋 Deck Reference",
+                description="Click below to download the deck JSON you registered for this run.",
+                color=discord.Color.blurple()
+            )
+            await message.channel.send(embed=deck_embed, view=DeckDownloadView(uid, uid))
     elif content.upper() == "MY_DATA":
         current = load_json(RUNS_FILE)
         completed = load_json(COMPLETED_FILE)
