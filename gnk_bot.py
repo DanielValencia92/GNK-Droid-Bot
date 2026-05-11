@@ -1635,6 +1635,12 @@ async def _post_weekly_report_to_channel(channel=None, force=False):
             logging.info("Weekly report: no changes since last report, skipping.")
             return
 
+    # Skip if there are no completed runs to report on.
+    completed_data = load_json(COMPLETED_FILE)
+    if not completed_data:
+        logging.info("Weekly report: no completed runs, skipping.")
+        return
+
     await channel.send(embed=discord.Embed(
         title="📅 Weekly Season Report",
         description="Here's a full breakdown of current season standings across all award categories.",

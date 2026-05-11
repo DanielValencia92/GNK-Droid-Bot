@@ -156,7 +156,7 @@ The branch can be changed at runtime using the `!update_bot` command — see Adm
 
 | Task | Schedule | Description |
 |---|---|---|
-| Weekly season report | 8:30 AM PT every Monday | Posts four standings images (Champion, Tinkerer, Final Showdown, Meta) to the leaderboard channel. Skipped automatically if `completed_runs.json` has not changed since the last post. |
+| Weekly season report | 8:30 AM PT every Monday | Posts four standings images (Champion, Tinkerer, Final Showdown, Meta) to the leaderboard channel. Skipped automatically if there are no completed runs, or if `completed_runs.json` has not changed since the last post. |
 | Queue cleanup | Every 25 minutes | Removes players who have been in queue for over 60 minutes and notifies them |
 | Passive timeout cleanup | Every 2 minutes | Clears expired deck registration and reactivation request sessions |
 | Presence update | Every 60 seconds | Updates the bot's status to reflect the number of players currently in queue |
@@ -175,7 +175,7 @@ Posted every Monday at 8:30 AM PT to the leaderboard channel. Posts a header emb
 | 📈 Final Showdown Standings | Players ranked by win % across runs completed in the last 14 days, then total games in that window |
 | ⚔️ Meta Report | Leader + Aspect win rates across all completed runs |
 
-The report is skipped if `completed_runs.json` has not changed since the last post. Use `!post_weekly_report_here` to force output in the current channel regardless.
+The report is skipped if there are no completed runs, or if `completed_runs.json` has not changed since the last post. Use `!post_weekly_report_here` to force output in the current channel regardless.
 
 ### `!user_report` — Player Performance
 Tabulated PNG showing each player's total **Wins**, **Losses**, **Positive Runs**, **Total Games**, and **Win %**, sorted by Win %.
