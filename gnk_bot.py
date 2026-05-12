@@ -1010,17 +1010,41 @@ async def on_message(message):
         
         if is_admin:
             embed.add_field(
-                name="⚙️ Admin Commands (Server Only)", 
+                name="⚙️ Admin Commands (Server Only)",
                 value=(
-                    "`!spawn_queue` - Create the entry button.\n"
-                    "`!user_run_history [ID]` - View all RunIDs for a player.\n"
-                    "`!get_run_data [RunID]` - Detailed view of a specific run.\n"
+                    "`!spawn_queue` - Post the Start New League Run button in the current channel.\n"
+                    "`!check_queue` - List the names of all players currently in the queue.\n"
                     "`!force_result [W_ID] [L_ID]` - Manually log a match result.\n"
-                    "`!cancel_run [ID]` - Delete a run and reset history.\n"
-                    "`!reactivate_run [RunID]` - Manually restore an archived run.\n"
+                    "`!cancel_run [ID]` - Delete a run and reset daily history. Accepts user ID or run ID.\n"
+                    "`!user_run_history [ID]` - View all run IDs (active and completed) for a player.\n"
+                    "`!reactivate_run [RunID]` - Manually restore a completed run to active status.\n"
+                    "`!get_run_data [RunID]` - View full details of any run (active or completed).\n"
+                    "`!delete_run [RunID]` - Permanently remove a run from all records."
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name="📊 Reports & Standings",
+                value=(
+                    "`!post_standings` - Manually post the current standings image.\n"
                     "`!post_weekly_report` - Post the weekly season report to the leaderboard channel.\n"
-                    "`!post_weekly_report_here` - Post the weekly season report in this channel (for testing; always forces output)."
-                ), 
+                    "`!post_weekly_report_here` - Force the weekly report in this channel (ignores unchanged-data check).\n"
+                    "`!meta` - Generate a leader + aspect win rate breakdown image.\n"
+                    "`!user_report` - Generate a per-player wins/losses/positive runs image.\n"
+                    "`!mastery_report` - Generate a per-player unique positive leaders/win rate image."
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name="🛠️ Bot Management",
+                value=(
+                    "`!update_card_data` - Fetch the latest leaders and bases from the SWUDB API.\n"
+                    "`!fix_card_mappings` - Scan run files for unresolved card IDs and resolve them using card data.\n"
+                    "`!update_bot [branch]` - Pull the latest code and restart. Defaults to `main`.\n"
+                    "`!test_trophy [member]` - Test the 3-0 trophy DM and announcement flow.\n"
+                    "`!version` - Show the current git build info.\n"
+                    "`!sync` - Sync slash commands to the server."
+                ),
                 inline=False
             )
             embed.color = discord.Color.dark_red() # Change color for Admins
@@ -1538,6 +1562,51 @@ async def update_card_data(ctx):
         description="\n".join(results),
         color=discord.Color.green() if all(r.startswith("✅") for r in results) else discord.Color.red()
     )
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="fix_card_mappings")
+@commands.is_owner()
+async def fix_card_mappings(ctx):
+    """Scans active and completed runs for raw card IDs and resolves them to proper names."""
+    from helper import fix_run_card_mappings
+
+    await ctx.send("🔍 Scanning run files for unresolved card IDs...")
+
+    result = fix_run_card_mappings(RUNS_FILE, COMPLETED_FILE)
+
+    active_fixed    = result["active_fixed"]
+    completed_fixed = result["completed_fixed"]
+    details         = result["details"]
+    total           = active_fixed + completed_fixed
+
+    if not details:
+        await ctx.send("✅ No unresolved card IDs found. All mappings look good!")
+        return
+
+    # Build the embed
+    color = discord.Color.green() if total > 0 else discord.Color.orange()
+    embed = discord.Embed(
+        title="🃏 Card Mapping Fix Report",
+        color=color,
+        description=(
+            f"**Active runs fixed:** {active_fixed}\n"
+            f"**Completed runs fixed:** {completed_fixed}\n"
+            f"**Total fields updated:** {total}"
+        )
+    )
+
+    # Discord field values max out at 1024 chars — chunk the detail lines
+    chunk, chunk_len, chunk_num = [], 0, 1
+    for line in details:
+        if chunk_len + len(line) + 1 > 1000:
+            embed.add_field(name=f"Changes ({chunk_num})", value="\n".join(chunk), inline=False)
+            chunk, chunk_len, chunk_num = [], 0, chunk_num + 1
+        chunk.append(line)
+        chunk_len += len(line) + 1
+    if chunk:
+        embed.add_field(name=f"Changes ({chunk_num})", value="\n".join(chunk), inline=False)
+
     await ctx.send(embed=embed)
 
 

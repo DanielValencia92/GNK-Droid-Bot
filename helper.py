@@ -340,7 +340,9 @@ def get_card_map(file_path, card_type="Leader"):
     with open(file_path, 'r') as f:
         content = json.load(f)
         for card in content.get('data', []):
-            card_id = f"{card.get('Set')}_{card.get('Number')}"
+            raw_number = card.get('Number', '')
+            padded_number = raw_number.zfill(2) if raw_number.isdigit() else raw_number
+            card_id = f"{card.get('Set')}_{padded_number}"
             name = card.get('Name', 'Unknown')
             
             # Subtitle Logic
@@ -522,6 +524,68 @@ def generate_final_showdown_standings(completed_file, days=14):
     df_styled = df.style.background_gradient(subset=["Win %"], cmap='Reds')
     dfi.export(df_styled, output_file, table_conversion='matplotlib')
     return output_file
+
+
+# Raw card ID pattern: uppercase letters + digits, underscore, digits (e.g. TS26_08, SOR_01)
+_RAW_ID_RE = re.compile(r'^[A-Z]+\d+_\d+$')
+
+def fix_run_card_mappings(runs_file, completed_file):
+    """
+    Scans active and completed run files for entries whose 'leader' or 'base'
+    fields still contain a raw card ID (e.g. 'TS26_08') instead of a resolved
+    name, and replaces them using the current local card data files.
+
+    Returns a dict:
+        {
+            'active_fixed': int,
+            'completed_fixed': int,
+            'details': [str, ...]   # human-readable change log
+        }
+    """
+    leader_map = get_card_map(LEADER_DATA_PATH, card_type="Leader")
+    base_map   = get_card_map(BASE_DATA_PATH,   card_type="Base")
+
+    details = []
+    active_fixed = 0
+    completed_fixed = 0
+
+    def _fix_dict(data, source_label):
+        """Mutates data in place, returns number of fields fixed."""
+        fixed = 0
+        for run_id, run in data.items():
+            for field, card_map in (("leader", leader_map), ("base", base_map)):
+                val = run.get(field, "")
+                if val and _RAW_ID_RE.match(str(val)):
+                    resolved = card_map.get(val)
+                    if resolved:
+                        run[field] = resolved
+                        details.append(f"{source_label} run `{run_id}` {field}: `{val}` → `{resolved}`")
+                        fixed += 1
+                    else:
+                        details.append(f"{source_label} run `{run_id}` {field}: `{val}` — ⚠️ no match found in card data")
+        return fixed
+
+    if os.path.exists(runs_file):
+        with open(runs_file, 'r') as f:
+            active = json.load(f)
+        active_fixed = _fix_dict(active, "Active")
+        if active_fixed:
+            with open(runs_file, 'w') as f:
+                json.dump(active, f, indent=4)
+
+    if os.path.exists(completed_file):
+        with open(completed_file, 'r') as f:
+            completed = json.load(f)
+        completed_fixed = _fix_dict(completed, "Completed")
+        if completed_fixed:
+            with open(completed_file, 'w') as f:
+                json.dump(completed, f, indent=4)
+
+    return {
+        "active_fixed": active_fixed,
+        "completed_fixed": completed_fixed,
+        "details": details,
+    }
 
 
 # --- DATA PERSISTENCE HELPERS ---
