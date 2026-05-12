@@ -132,7 +132,7 @@ The branch can be changed at runtime using the `!update_bot` command — see Adm
 |---|---|
 | `!spawn_queue` | Post the "Start New League Run" button in the current channel |
 | `!force_result <winner_id> <loser_id>` | Manually record a match result for two active players |
-| `!cancel_run <user_id>` | Delete a player's active run and reset their daily history |
+| `!cancel_run <user_id\|run_id>` | Delete a player's active run and reset their daily history. Accepts either a Discord user ID or an 8-character run ID (e.g. `fc939a1e`) |
 | `!check_queue` | List the names of all players currently in the queue |
 | `!user_run_history <user_id>` | Show all run IDs (active and completed) for a player |
 | `!reactivate_run <run_id>` | Move a completed run back to active status |

@@ -1177,33 +1177,48 @@ async def force_result(ctx, winner_id: int, loser_id: int):
 
 @bot.hybrid_command()
 @commands.is_owner()
-async def cancel_run(ctx, user_id: int):
-    """Admin only: Deletes a player's current run without archiving it."""
+async def cancel_run(ctx, target: str):
+    """Admin only: Deletes a player's current run without archiving it. Accepts a Discord user ID or a run ID."""
     runs = load_json(RUNS_FILE)
-    
-    if str(user_id) not in runs:
-        await ctx.send(f"❌ No active run found for User ID `{user_id}`.")
+
+    # Resolve target to a user_id string — accept either a numeric Discord ID or an 8-char run ID.
+    user_id_str = None
+    if target.isdigit():
+        # Passed a Discord user ID directly.
+        if target in runs:
+            user_id_str = target
+    else:
+        # Passed a run ID — find which user owns it.
+        for uid, data in runs.items():
+            if data.get("run_id") == target:
+                user_id_str = uid
+                break
+
+    if user_id_str is None:
+        await ctx.send(f"❌ No active run found for `{target}`.")
         return
 
     # Remove from current runs
-    player_data = runs.pop(str(user_id))
+    player_data = runs.pop(user_id_str)
     save_json(RUNS_FILE, runs)
 
+    user_id_int = int(user_id_str)
+
     # Remove from queue if they are currently waiting
-    if user_id in player_queue:
-        player_queue.pop(user_id, None)
-        if user_id in queue_timers:
-            queue_timers[user_id].cancel()
-            del queue_timers[user_id]
+    if user_id_int in player_queue:
+        player_queue.pop(user_id_int, None)
+        if user_id_int in queue_timers:
+            queue_timers[user_id_int].cancel()
+            del queue_timers[user_id_int]
         logging.info(f"CANCEL_RUN: {player_data['name']} removed from queue.")
 
     # Clear their history to allow immediate new runs if needed
     history = load_json(HISTORY_FILE)
-    if str(user_id) in history:
-        history.pop(str(user_id))
+    if user_id_str in history:
+        history.pop(user_id_str)
         save_json(HISTORY_FILE, history)
-        await ctx.send(f"✨ Daily limit history for <@{user_id}> has also been reset.")
-    await ctx.send(f"🗑️ **Run Cancelled:** The run for **{player_data['name']}** has been deleted. They can now start a new run (history cleared).")
+        await ctx.send(f"✨ Daily limit history for <@{user_id_int}> has also been reset.")
+    await ctx.send(f"🗑️ **Run Cancelled:** The run for **{player_data['name']}** (`{player_data['run_id']}`) has been deleted. They can now start a new run (history cleared).")
 
 @bot.hybrid_command()
 @commands.is_owner()
