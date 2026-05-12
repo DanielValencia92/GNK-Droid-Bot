@@ -147,7 +147,7 @@ The branch can be changed at runtime using the `!update_bot` command — see Adm
 | `!test_trophy <member>` | Test the 3-0 DM and trophy announcement flow |
 | `!update_bot [branch]` | Pull the latest code and restart. Writes `branch` (default: `main`) to the `target_branch` file used by `deploy.sh`. Example: `!update_bot experimental` |
 | `!update_card_data` | Fetch the latest leaders and bases from the SWUDB API and overwrite `card_data_files/all_leaders.json` and `card_data_files/all_bases.json` |
-| `!fix_card_mappings` | Scan `current_runs.json` and `completed_runs.json` for unresolved raw card IDs (e.g. `TS26_08`) and replace them with proper names using the local card data files. Run this after `!update_card_data` if any leaders/bases were previously unresolvable |
+| `!fix_card_mappings` | Scan `current_runs.json` and `completed_runs.json` for unresolved card references and replace them with proper names using the local card data files. Handles both bare IDs (e.g. `TS26_08`) and fallback strings left by earlier bot versions (e.g. `Unknown Leader (TS26_08)`). Run this after `!update_card_data` if any leaders/bases were previously unresolvable |
 | `!version` | Show the current git build info |
 | `!sync` | Sync slash commands to the server |
 

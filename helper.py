@@ -528,12 +528,31 @@ def generate_final_showdown_standings(completed_file, days=14):
 
 # Raw card ID pattern: uppercase letters + digits, underscore, digits (e.g. TS26_08, SOR_01)
 _RAW_ID_RE = re.compile(r'^[A-Z]+\d+_\d+$')
+# Fallback pattern: "Unknown Leader (TS26_08)" or "Unknown Base (SOR_01)"
+_UNKNOWN_ID_RE = re.compile(r'^Unknown (?:Leader|Base) \(([A-Z]+\d+_\d+)\)$')
+
+def _extract_raw_id(val):
+    """
+    Returns the raw card ID embedded in a value, or None if the value
+    doesn't look like an unresolved card reference.
+    Handles both bare IDs ('TS26_08') and fallback strings ('Unknown Leader (TS26_08)').
+    """
+    if not val:
+        return None
+    s = str(val)
+    if _RAW_ID_RE.match(s):
+        return s
+    m = _UNKNOWN_ID_RE.match(s)
+    if m:
+        return m.group(1)
+    return None
 
 def fix_run_card_mappings(runs_file, completed_file):
     """
     Scans active and completed run files for entries whose 'leader' or 'base'
-    fields still contain a raw card ID (e.g. 'TS26_08') instead of a resolved
-    name, and replaces them using the current local card data files.
+    fields still contain a raw card ID (e.g. 'TS26_08') or an unresolved
+    fallback string (e.g. 'Unknown Leader (TS26_08)') and replaces them with
+    proper names using the current local card data files.
 
     Returns a dict:
         {
@@ -555,8 +574,9 @@ def fix_run_card_mappings(runs_file, completed_file):
         for run_id, run in data.items():
             for field, card_map in (("leader", leader_map), ("base", base_map)):
                 val = run.get(field, "")
-                if val and _RAW_ID_RE.match(str(val)):
-                    resolved = card_map.get(val)
+                raw_id = _extract_raw_id(val)
+                if raw_id:
+                    resolved = card_map.get(raw_id)
                     if resolved:
                         run[field] = resolved
                         details.append(f"{source_label} run `{run_id}` {field}: `{val}` → `{resolved}`")
